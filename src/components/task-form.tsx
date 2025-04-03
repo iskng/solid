@@ -52,7 +52,7 @@ export const TaskForm: Component<TaskFormProps> = (props) => {
         let response;
         if (props.editRecord?.id) {
           // Update existing task
-          response = await updateTaskById(props.editRecord.id, value);
+          response = await updateTaskById(props.editRecord.id.id, value);
         } else {
           // Create new task
           response = await createTask(value);

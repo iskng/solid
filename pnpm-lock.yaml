@@ -20,6 +20,9 @@ importers:
       '@solidjs/start':
         specifier: ^1.1.0
         version: 1.1.3(@types/node@22.13.17)(jiti@2.4.2)(lightningcss@1.29.2)(solid-js@1.9.5)(terser@5.39.0)(vinxi@0.5.3(@types/node@22.13.17)(db0@0.3.1)(ioredis@5.6.0)(jiti@2.4.2)(lightningcss@1.29.2)(terser@5.39.0))(vite@6.2.4(@types/node@22.13.17)(jiti@2.4.2)(lightningcss@1.29.2)(terser@5.39.0))
+      '@tanstack/solid-form':
+        specifier: ^1.2.4
+        version: 1.2.4(solid-js@1.9.5)
       '@teamhanko/passkeys-sdk':
         specifier: ^0.2.1
         version: 0.2.1
@@ -1064,6 +1067,9 @@ packages:
     resolution: {integrity: sha512-hm5vOUWURrdibOD4JTcKPmz4U4iDjxZhRNrGVR2JEqYc7nWHb53Fb+2F1jIHyuLuhnuVt9vq5omqcegbd2oPhA==}
     engines: {node: '>=12'}
 
+  '@tanstack/form-core@1.2.4':
+    resolution: {integrity: sha512-s2augI1yvI9aZYxxElhHhSIDzbkdhQyttW8RpmSGOrnyfk7OMhYCx/OeXsYOaLr0Vp1leVZrk//s4rEDFLf/lA==}
+
   '@tanstack/router-utils@1.114.29':
     resolution: {integrity: sha512-RDn3aMOHPrXYCQGXNaN4P0MvwiuCZHBKTO9srtLqYYCzW2iipqbyZ53RI54TzPgNLE37jtN5XaEH4FNF0Ydodg==}
     engines: {node: '>=12'}
@@ -1071,6 +1077,19 @@ packages:
   '@tanstack/server-functions-plugin@1.114.32':
     resolution: {integrity: sha512-l4RonnJM8gOLeyzThSEd/ZTDhrMGQGm9ZdXtmoLPF17L6Z6neJkNmfYSvVXPPUpL9aQOVncAR0OWDgZgsxIjFw==}
     engines: {node: '>=12'}
+
+  '@tanstack/solid-form@1.2.4':
+    resolution: {integrity: sha512-vX/r38yH2qZZyi/y0w8143nI7f98BCxRGhdgQ7ChB+GZIIC9bOFiNdihYENNxWpM4jr1TL88vMHxEUtc7fHwXw==}
+    peerDependencies:
+      solid-js: ^1.6.0
+
+  '@tanstack/solid-store@0.7.0':
+    resolution: {integrity: sha512-uDQYkUuH3MppitiduZLTEcItkTr8vEJ33jzp2rH2VvlNRMGbuU54GQcqf3dLIlTbZ1/Z2TtIBtBjjl+N/OhwRg==}
+    peerDependencies:
+      solid-js: ^1.6.0
+
+  '@tanstack/store@0.7.0':
+    resolution: {integrity: sha512-CNIhdoUsmD2NolYuaIs8VfWM467RK6oIBAW4nPEKZhg1smZ+/CwtCdpURgp7nxSqOaV9oKkzdWD80+bC66F/Jg==}
 
   '@teamhanko/passkeys-sdk@0.2.1':
     resolution: {integrity: sha512-63hzelWzKhSCLpnfy/yCezaq3JplyNP3ww6Ykm9nzUUhKlVtpzw0GmjpX2gi+zjJNlvdec8ZOS5Htx81Dbb7eg==}
@@ -3734,6 +3753,10 @@ snapshots:
       - tsx
       - yaml
 
+  '@tanstack/form-core@1.2.4':
+    dependencies:
+      '@tanstack/store': 0.7.0
+
   '@tanstack/router-utils@1.114.29':
     dependencies:
       '@babel/generator': 7.27.0
@@ -3768,6 +3791,19 @@ snapshots:
       - terser
       - tsx
       - yaml
+
+  '@tanstack/solid-form@1.2.4(solid-js@1.9.5)':
+    dependencies:
+      '@tanstack/form-core': 1.2.4
+      '@tanstack/solid-store': 0.7.0(solid-js@1.9.5)
+      solid-js: 1.9.5
+
+  '@tanstack/solid-store@0.7.0(solid-js@1.9.5)':
+    dependencies:
+      '@tanstack/store': 0.7.0
+      solid-js: 1.9.5
+
+  '@tanstack/store@0.7.0': {}
 
   '@teamhanko/passkeys-sdk@0.2.1':
     dependencies:
