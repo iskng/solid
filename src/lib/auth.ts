@@ -6,6 +6,7 @@ import { v4 as uuidv4 } from "uuid";
 import * as jose from "jose";
 import { userSchema, passkeySchema } from "./schema";
 import { useSession } from "vinxi/http"; // Import vinxi session helper
+import { RecordId } from "surrealdb"; // Import RecordId
 
 // --- Environment Variables ---
 const passkeysApiKey = process.env.PASSKEYS_API_KEY!;
@@ -98,44 +99,54 @@ async function getUserByEmail(email: string): Promise<User | null> {
 }
 
 export async function getUserById(id: string): Promise<User | null> {
-  const recordId = id.includes(":") ? id : `user:${id}`;
+  // Ensure id is in the format "user:<id>" before splitting
+  const fullRecordIdString = id.includes(":") ? id : `user:${id}`;
+  const [tableName, recordUuid] = fullRecordIdString.split(":", 2);
+
+  // Validate parts before creating RecordId
+  if (!tableName || !recordUuid) {
+    console.error(`[getUserById] Invalid record ID format provided: ${id}`);
+    return null;
+  }
+
   const db = await getSurrealConnection();
   try {
-    // Add more logging before the query
-    console.log(`[getUserById] Attempting to select record: ${recordId}`);
+    const recordIdObject = new RecordId(tableName, recordUuid);
+    console.log(`[getUserById] Attempting to select record: ${recordIdObject}`);
+
+    // Use db.select with RecordId object
+    // It returns the record directly, not an array, when selecting by specific ID
+    const userRecord = await db.select<User>(recordIdObject);
     console.log(
-      `[getUserById] DB connection status (driver specific):`,
-      db?.status
-    ); // Check if driver exposes status
+      "[getUserById] Raw result from db.select with RecordId:",
+      userRecord
+    );
 
-    console.log(`[getUserById] Fetching user record: ${recordId}`);
-    // Use select and get the first result
-    const userRecord = await db.select<User>(recordId); // Fetch as any first
-    console.log("[getUserById] Raw result:", userRecord);
-
+    // Check if userRecord exists (db.select might return null/undefined or throw? Check driver docs)
+    // Assuming it returns the object or null/undefined if not found.
     if (!userRecord) {
-      console.log(`[getUserById] User record ${recordId} not found.`);
+      console.log(
+        `[getUserById] User record ${recordIdObject} not found via select.`
+      );
       return null;
     }
 
-    console.log("[getUserById] Raw user record:", userRecord);
     // Validate with Zod
     const parsedUser = userSchema.safeParse(userRecord);
     if (parsedUser.success) {
-      // parsedUser.data.id is {tb, id}
       console.log(
         `[getUserById] Successfully parsed user: ${parsedUser.data.id.tb}:${parsedUser.data.id.id}`
       );
       return parsedUser.data;
     } else {
       console.error(
-        `[getUserById] Failed to parse user record ${recordId}:`,
+        `[getUserById] Failed to parse user record ${recordIdObject} after select:`,
         parsedUser.error
       );
       return null;
     }
   } catch (error) {
-    console.error(`Error fetching user ${recordId}:`, error);
+    console.error(`Error selecting user ${fullRecordIdString}:`, error);
     return null;
   }
 }

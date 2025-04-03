@@ -114,13 +114,34 @@ export default function Login() {
         if (!startData.loginOptions) {
           throw new Error("Missing login options from server.");
         }
+
+        // Ensure allowCredentials is an array (default to empty)
+        const loginOptionsWithDefaults = {
+          ...startData.loginOptions,
+          allowCredentials: startData.loginOptions.allowCredentials || [],
+        };
+
         try {
+          // Log the adjusted options
           console.log(
-            "[Client Login] Options received from server:",
-            startData.loginOptions
+            "[Client Login] Adjusted options:",
+            loginOptionsWithDefaults
           );
+          // Explicitly log the fields known to be processed
+          console.log(
+            "[Client Login] Challenge:",
+            loginOptionsWithDefaults?.challenge,
+            typeof loginOptionsWithDefaults?.challenge
+          );
+          console.log(
+            "[Client Login] AllowCredentials:",
+            loginOptionsWithDefaults?.allowCredentials,
+            Array.isArray(loginOptionsWithDefaults?.allowCredentials)
+          );
+
+          // Pass the adjusted options object correctly wrapped
           credentialResponse = await startAuthentication({
-            optionsJSON: startData.loginOptions,
+            optionsJSON: loginOptionsWithDefaults,
           });
           console.log("Authentication credential created:", credentialResponse);
         } catch (err: any) {
