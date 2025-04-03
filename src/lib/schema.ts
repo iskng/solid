@@ -25,7 +25,7 @@ export function recordLink<T extends string = string>(table?: T) {
 export const userSchema = z.object({
   id: recordLink("user").readonly(), // Now expects {tb:"user", id:...}, transforms to "user:..."
   email: z.string().email().readonly(),
-  // name: z.string().optional().readonly(),
+  name: z.string().optional().nullable().readonly(),
   // image: z.string().url().optional().readonly(),
   // Add other fields as needed, e.g., timestamps
   // createdAt: z.string().datetime().optional().readonly(), // Or z.date()

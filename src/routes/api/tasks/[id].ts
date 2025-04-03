@@ -1,20 +1,33 @@
 import { APIEvent } from "@solidjs/start/server";
-import { getUserFromRequest } from "~/lib/auth";
+import { getUserSession } from "~/lib/auth";
 import { getSurrealConnection } from "~/lib/surreal";
 import { Task, taskSchema } from "~/lib/schema";
+import { RecordId } from "surrealdb";
 
 const JSON_HEADER = { headers: { "Content-Type": "application/json" } };
 
 // Helper to get task and check ownership
 async function getTaskAndCheckAuth(
   taskId: string,
-  userId: string
+  sessionUserId: string
 ): Promise<{ task: Task | null; error?: Response }> {
   const db = await getSurrealConnection();
-  const taskRecordId = taskId.includes(":") ? taskId : `task:${taskId}`;
+  const [tableName, recordUuid] = taskId.includes(":")
+    ? taskId.split(":", 2)
+    : ["task", taskId];
+  if (!tableName || !recordUuid) {
+    return {
+      task: null,
+      error: new Response(
+        JSON.stringify({ message: "Invalid Task ID format" }),
+        { ...JSON_HEADER, status: 400 }
+      ),
+    };
+  }
+  const taskRecordIdObject = new RecordId(tableName, recordUuid);
+
   try {
-    const result = await db.select<Task>(taskRecordId);
-    const task = result?.[0];
+    const task = await db.select<Task>(taskRecordIdObject);
 
     if (!task) {
       return {
@@ -25,7 +38,28 @@ async function getTaskAndCheckAuth(
         }),
       };
     }
-    if (task.author !== userId) {
+
+    const parsedTask = taskSchema.safeParse(task);
+    if (!parsedTask.success) {
+      console.error(
+        `[API Tasks ${taskId}] Fetched task failed validation:`,
+        parsedTask.error
+      );
+      return {
+        task: null,
+        error: new Response(
+          JSON.stringify({ message: "Failed to validate fetched task" }),
+          { ...JSON_HEADER, status: 500 }
+        ),
+      };
+    }
+    const validatedTask = parsedTask.data;
+
+    const authorStringId = `${validatedTask.author.tb}:${validatedTask.author.id}`;
+    if (authorStringId !== sessionUserId) {
+      console.warn(
+        `[API Tasks ${taskId}] Auth check failed: Task author ${authorStringId} != Session user ${sessionUserId}`
+      );
       return {
         task: null,
         error: new Response(
@@ -34,7 +68,7 @@ async function getTaskAndCheckAuth(
         ),
       };
     }
-    return { task };
+    return { task: validatedTask };
   } catch (e) {
     console.error(`[API Tasks ${taskId}] Error fetching task:`, e);
     return {
@@ -49,8 +83,9 @@ async function getTaskAndCheckAuth(
 
 // PATCH /api/tasks/:id
 export async function PATCH({ request, params }: APIEvent): Promise<Response> {
-  const user = await getUserFromRequest(request);
-  if (!user) {
+  const session = await getUserSession();
+  const userId = session.data.userId;
+  if (!userId) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), {
       ...JSON_HEADER,
       status: 401,
@@ -64,16 +99,20 @@ export async function PATCH({ request, params }: APIEvent): Promise<Response> {
       status: 400,
     });
   }
-  const taskRecordId = taskId.includes(":") ? taskId : `task:${taskId}`;
+  const [tableName, recordUuid] = taskId.includes(":")
+    ? taskId.split(":", 2)
+    : ["task", taskId];
+  if (!tableName || !recordUuid) {
+    return new Response(JSON.stringify({ message: "Invalid Task ID format" }), {
+      ...JSON_HEADER,
+      status: 400,
+    });
+  }
+  const taskRecordIdObject = new RecordId(tableName, recordUuid);
 
-  // 1. Get existing task and check auth
-  const { task, error: fetchError } = await getTaskAndCheckAuth(
-    taskId,
-    user.id
-  );
+  const { task, error: fetchError } = await getTaskAndCheckAuth(taskId, userId);
   if (fetchError) return fetchError;
   if (!task) {
-    // Should be caught by fetchError, but belt-and-suspenders
     return new Response(
       JSON.stringify({ message: "Task not found or access denied" }),
       { ...JSON_HEADER, status: 404 }
@@ -83,8 +122,6 @@ export async function PATCH({ request, params }: APIEvent): Promise<Response> {
   try {
     const payload = await request.json();
 
-    // 2. Validate incoming update data (allow partial updates)
-    // Allow any subset of the editable fields
     const taskUpdateSchema = taskSchema.partial().omit({
       id: true,
       author: true,
@@ -114,16 +151,13 @@ export async function PATCH({ request, params }: APIEvent): Promise<Response> {
       );
     }
 
-    // 3. Prepare data for update (merge does a partial update)
     const updateData = {
       ...validationResult.data,
-      updatedAt: new Date().toISOString(), // Always update timestamp
+      updatedAt: new Date().toISOString(),
     };
 
-    // 4. Update task in SurrealDB using MERGE
     const db = await getSurrealConnection();
-    // merge returns the merged record
-    const updatedRecords = await db.merge(taskRecordId, updateData);
+    const updatedRecords = await db.merge(taskRecordIdObject, updateData);
     const parsedUpdatedTask = taskSchema.safeParse(updatedRecords?.[0]);
 
     if (!parsedUpdatedTask.success) {
@@ -151,8 +185,9 @@ export async function PATCH({ request, params }: APIEvent): Promise<Response> {
 
 // DELETE /api/tasks/:id
 export async function DELETE({ request, params }: APIEvent): Promise<Response> {
-  const user = await getUserFromRequest(request);
-  if (!user) {
+  const session = await getUserSession();
+  const userId = session.data.userId;
+  if (!userId) {
     return new Response(JSON.stringify({ message: "Unauthorized" }), {
       ...JSON_HEADER,
       status: 401,
@@ -166,27 +201,24 @@ export async function DELETE({ request, params }: APIEvent): Promise<Response> {
       status: 400,
     });
   }
-  const taskRecordId = taskId.includes(":") ? taskId : `task:${taskId}`;
-
-  // 1. Get existing task and check auth
-  const { task, error: fetchError } = await getTaskAndCheckAuth(
-    taskId,
-    user.id
-  );
-  if (fetchError) return fetchError;
-  if (!task) {
-    return new Response(
-      JSON.stringify({ message: "Task not found or access denied" }),
-      { ...JSON_HEADER, status: 404 }
-    );
+  const [tableName, recordUuid] = taskId.includes(":")
+    ? taskId.split(":", 2)
+    : ["task", taskId];
+  if (!tableName || !recordUuid) {
+    return new Response(JSON.stringify({ message: "Invalid Task ID format" }), {
+      ...JSON_HEADER,
+      status: 400,
+    });
   }
+  const taskRecordIdObject = new RecordId(tableName, recordUuid);
+
+  const { error: fetchError } = await getTaskAndCheckAuth(taskId, userId);
+  if (fetchError) return fetchError;
 
   try {
-    // 2. Delete task from SurrealDB
     const db = await getSurrealConnection();
-    await db.delete(taskRecordId);
+    await db.delete(taskRecordIdObject);
 
-    // Return 204 No Content on successful deletion
     return new Response(null, { status: 204 });
   } catch (error: any) {
     console.error(`[API Tasks DELETE ${taskId}] Error deleting task:`, error);

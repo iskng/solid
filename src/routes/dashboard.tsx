@@ -1,8 +1,21 @@
-import { createSignal, Show } from "solid-js";
-import { createAsync, type RouteDefinition } from "@solidjs/router";
-import { getUserQuery } from "~/lib/queries";
+import { createSignal, Show, type Component, Suspense } from "solid-js";
+import {
+  A,
+  useNavigate,
+  type RouteDefinition,
+  createAsync,
+  redirect,
+} from "@solidjs/router";
+import { getUserSession, getUserById } from "~/lib/auth"; // Import session and user fetcher
 import type { User } from "~/lib/schema";
-import { isServer } from "solid-js/web"; // Import isServer
+import { isServer } from "solid-js/web";
+
+// Define the expected shape of the data from the loader
+type DashboardData = {
+  id: string; // "user:<id>"
+  email: string;
+  name?: string | null; // Allow name to be optional or null
+} | null;
 
 // Basic Button component (replace with DaisyUI)
 const Button = (props: any) => (
@@ -15,39 +28,84 @@ const Button = (props: any) => (
   </button>
 );
 
-// Define route using the query for data fetching
+// Route definition without data loading logic
 export const route = {
-  load: () => getUserQuery(),
+  // Preload is optional with createAsync, but can remain if desired
+  // async preload() {
+  //   // We can't easily call the inline server function for true preload
+  //   // Preloading might require a separate exported server function if needed.
+  // }
 } satisfies RouteDefinition;
 
 export default function DashboardPage() {
-  const user = createAsync(() => getUserQuery());
+  // Define and call the server function inline with createAsync
+  const userData = createAsync(async () => {
+    "use server";
+    // Moved logic from loadDashboardData here
+    console.log("[createAsync Dashboard] Fetching user session...");
+    const session = await getUserSession();
+    const userIdString = session.data.userId;
+
+    if (!userIdString) {
+      console.log(
+        "[createAsync Dashboard] No user ID in session, redirecting to login."
+      );
+      throw redirect("/login");
+    }
+
+    console.log(
+      `[createAsync Dashboard] Fetching DB user details for ${userIdString}`
+    );
+    const user = await getUserById(userIdString);
+
+    if (!user) {
+      console.warn(
+        `[createAsync Dashboard] User ${userIdString} from session not found in DB! Clearing session & redirecting.`
+      );
+      await session.clear();
+      throw redirect("/login");
+    }
+
+    const data: DashboardData = {
+      id: `${user.id.tb}:${user.id.id}`,
+      email: user.email,
+      name: user.name ?? null,
+    };
+    console.log("[createAsync Dashboard] Returning user data:", data);
+    return data;
+  });
+
+  const navigate = useNavigate();
+
   const [isLoading, setIsLoading] = createSignal(false);
   const [message, setMessage] = createSignal<string | null>(null);
   const [error, setError] = createSignal<string | null>(null);
 
-  // --- SSR Logging ---
+  // --- SSR Logging --- (Keep if needed)
   if (isServer) {
     console.log("[SSR Dashboard] Rendering DashboardPage component.");
-    console.log(
-      "[SSR Dashboard] User data (initial from createAsync):",
-      user()
-    );
+    // userData() should contain the resolved data on the server
+    console.log("[SSR Dashboard] User data (from createAsync):", userData());
   }
   // --- End SSR Logging ---
 
   const registerPasskey = async () => {
+    // ... passkey registration logic (needs update) ...
+    // REVIEW: This still uses /api/passkeys/register which is likely deprecated/wrong
+    // It should probably use a dedicated endpoint or modify the existing login/auth endpoint
+    // to handle adding a key when already authenticated.
     setIsLoading(true);
     setMessage(null);
     setError(null);
     try {
-      // 1. Start registration on server
+      // 1. Start registration
       const startResponse = await fetch("/api/passkeys/register", {
+        // <<-- THIS API NEEDS TO BE CHECKED/FIXED
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ start: true }),
       });
-
+      // ... rest of registerPasskey ...
       if (!startResponse.ok) {
         const errData = await startResponse.json();
         throw new Error(
@@ -56,18 +114,18 @@ export default function DashboardPage() {
       }
       const { createOptions } = await startResponse.json();
 
-      // 2. Use browser API via webauthn-json
-      // Ensure @github/webauthn-json is imported/available
+      // 2. Use browser API
+      // Switch to @simplewebauthn/browser for consistency?
       const { get } = await import("@github/webauthn-json");
       const credential = await get(createOptions);
 
       // 3. Finish registration on server
       const finishResponse = await fetch("/api/passkeys/register", {
+        // <<-- THIS API NEEDS TO BE CHECKED/FIXED
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ finish: true, credential }),
       });
-
       if (!finishResponse.ok) {
         const errData = await finishResponse.json();
         throw new Error(
@@ -87,71 +145,58 @@ export default function DashboardPage() {
   return (
     <div class="container mx-auto p-8">
       <h1 class="text-3xl font-bold mb-6">Dashboard</h1>
-      <Show
-        when={user()}
-        fallback={
-          // --- SSR Logging ---
-          (() => {
-            if (isServer) {
-              console.log(
-                "[SSR Dashboard] Rendering fallback (user not loaded/logged in)."
-              );
-            }
-            return <p>Loading user data or not logged in...</p>;
-          })()
-          // --- End SSR Logging ---
-          /* TODO: Add redirect logic using useNavigate if user() === null */
-        }
-      >
-        {/* --- SSR Logging ---
-        {(() => {
-          if (isServer) {
-            console.log("[SSR Dashboard] Rendering main content (user loaded).");
-            console.log("[SSR Dashboard] User data in main content:", user());
-          }
-        })()} 
-        --- End SSR Logging --- */}
-        {/* Log inside the Show block if necessary - commented out for now to reduce noise */}
-        <div class="card bg-base-100 shadow-xl mb-6">
-          <div class="card-body">
-            <h2 class="card-title">
-              Welcome, {user()?.name || user()?.email}!
-            </h2>
-            <p>User ID: {user()?.id.id}</p>
-          </div>
-        </div>
+      {/* Use Suspense for loading state from createAsync */}
+      <Suspense fallback={<p>Loading user...</p>}>
+        {/* Check the resolved value of the signal */}
+        <Show when={userData()}>
+          {(user) => (
+            // user() is the resolved data signal value (DashboardData)
+            <>
+              <div class="card bg-base-100 shadow-xl mb-6">
+                <div class="card-body">
+                  <h2 class="card-title">
+                    {/* Check user() for null before accessing properties */}
+                    Welcome, {user()?.name || user()?.email}!
+                  </h2>
+                  <p>User ID: {user()?.id}</p>
+                </div>
+              </div>
 
-        <div class="card bg-base-100 shadow-xl">
-          <div class="card-body">
-            <h2 class="card-title">Manage Passkeys</h2>
-            <p class="mb-4">
-              Register this device or a security key to sign in without
-              passwords.
-            </p>
-            <Button
-              onClick={registerPasskey}
-              class="btn-primary"
-              disabled={isLoading()}
-            >
-              {isLoading() ? (
-                <span class="loading loading-spinner"></span>
-              ) : (
-                "Register New Passkey"
-              )}
-            </Button>
-            <Show when={message()}>
-              <div class="alert alert-success shadow-lg mt-4">
-                <span>{message()}</span>
+              <div class="card bg-base-100 shadow-xl">
+                <div class="card-body">
+                  <h2 class="card-title">Manage Passkeys</h2>
+                  <p class="mb-4">
+                    Register this device or a security key to sign in without
+                    passwords.
+                  </p>
+                  <Button
+                    onClick={registerPasskey}
+                    class="btn-primary"
+                    disabled={isLoading()}
+                  >
+                    {isLoading() ? (
+                      <span class="loading loading-spinner"></span>
+                    ) : (
+                      "Register New Passkey"
+                    )}
+                  </Button>
+                  {/* ... message/error display ... */}
+                  <Show when={message()}>
+                    <div class="alert alert-success shadow-lg mt-4">
+                      <span>{message()}</span>
+                    </div>
+                  </Show>
+                  <Show when={error()}>
+                    <div class="alert alert-error shadow-lg mt-4">
+                      <span>Error: {error()}</span>
+                    </div>
+                  </Show>
+                </div>
               </div>
-            </Show>
-            <Show when={error()}>
-              <div class="alert alert-error shadow-lg mt-4">
-                <span>Error: {error()}</span>
-              </div>
-            </Show>
-          </div>
-        </div>
-      </Show>
+            </>
+          )}
+        </Show>
+      </Suspense>
     </div>
   );
 }

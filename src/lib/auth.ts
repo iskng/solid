@@ -7,7 +7,7 @@ import * as jose from "jose";
 import { userSchema, passkeySchema } from "./schema";
 import { useSession } from "vinxi/http"; // Import vinxi session helper
 import { RecordId } from "surrealdb"; // Import RecordId
-
+import { redirect } from "@solidjs/router";
 // --- Environment Variables ---
 const passkeysApiKey = process.env.PASSKEYS_API_KEY!;
 const passkeysTenantId = process.env.PASSKEYS_TENANT_ID!;
@@ -533,9 +533,23 @@ export async function finishServerPasskeyLogin(
 
 // --- Helper Functions ---
 
-// RESTORE getUserFromRequest (though maybe not needed if using middleware)
-// Function to get user from request context (e.g., session cookie)
-/* // Keep commented out for now
+// Remove the dedicated server function as it's now inline in the component
+/*
+// --- Server Function for Dashboard Data Loading ---
+// Define the expected return shape (excluding null)
+type DashboardLoaderData = {
+    id: string; // "user:<id>"
+    email: string;
+    name?: string | null; 
+};
+export async function loadDashboardData(): Promise<DashboardLoaderData> {
+    "use server";
+    // ... implementation ...
+}
+*/
+
+// Keep commented out for now
+/* 
 export async function getUserFromRequest(
   request: Request
 ): Promise<User | null> {
