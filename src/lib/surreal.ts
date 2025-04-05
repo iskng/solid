@@ -62,14 +62,3 @@ export function getSurrealConnection(): Promise<Surreal> {
   }
   return connectionPromise;
 }
-
-// This function might be less useful if connection is server-only
-export function getSurrealDbInstance(): Surreal | null {
-  if (!isServer) return null; // Don't expose DB instance on client
-
-  if (surrealDatabase.status !== ConnectionStatus.Connected) {
-    console.warn("Attempting to get DB instance but status is not Connected.");
-    // Should rely on getSurrealConnection promise
-  }
-  return surrealDatabase;
-}
